@@ -1,0 +1,1433 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Tri Deezer – Morceaux manquants + API Deezer</title>
+    <style>
+        :root {
+            --bg-color: #f5f5f5;
+            --card-bg: white;
+            --text-color: #333;
+            --text-secondary: #666;
+            --text-muted: #999;
+            --border-color: #ddd;
+            --primary-color: #FF6F61;
+            --success-color: #4CAF50;
+            --warning-color: #FF9800;
+            --info-color: #2196F3;
+            --danger-color: #f44336;
+            --row-hover: #fff5f5;
+            --completed-bg: #f0f0f0;
+            --shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        [data-theme="dark"] {
+            --bg-color: #1a1a1a;
+            --card-bg: #2d2d2d;
+            --text-color: #e0e0e0;
+            --text-secondary: #b0b0b0;
+            --text-muted: #808080;
+            --border-color: #404040;
+            --row-hover: #3a3a3a;
+            --completed-bg: #252525;
+            --shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            margin: 20px;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            transition: background-color 0.3s, color 0.3s;
+        }
+        
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            gap: 10px;
+        }
+        
+        h1 {
+            color: var(--text-color);
+            border-bottom: 3px solid var(--primary-color);
+            padding-bottom: 10px;
+            flex-grow: 1;
+            font-size: 1.6rem;
+        }
+        
+        .theme-toggle {
+            margin-left: 20px;
+            background: var(--card-bg);
+            border: 2px solid var(--border-color);
+            border-radius: 25px;
+            padding: 8px 16px;
+            cursor: pointer;
+            font-size: 18px;
+            transition: all 0.3s;
+        }
+        
+        .theme-toggle:hover {
+            transform: scale(1.1);
+            box-shadow: var(--shadow);
+        }
+        
+        .summary, .info-box, .deezer-box {
+            background-color: var(--card-bg);
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: var(--shadow);
+            margin-bottom: 20px;
+        }
+        
+        .summary h2 {
+            margin-top: 0;
+        }
+        
+        .stat {
+            margin: 8px 0;
+            padding: 8px;
+            background-color: var(--bg-color);
+            border-left: 4px solid var(--success-color);
+        }
+        
+        .stat-warning {
+            border-left: 4px solid var(--warning-color);
+        }
+        
+        .missing {
+            border-left: 4px solid var(--danger-color);
+            font-weight: 600;
+        }
+        
+        .progress-stat {
+            background-color: rgba(33, 150, 243, 0.1);
+            border-left: 4px solid var(--info-color);
+            font-weight: 600;
+        }
+        
+        .info-box {
+            border-left: 4px solid var(--info-color);
+        }
+        
+        .info-box h3 {
+            margin-top: 0;
+            margin-bottom: 8px;
+            color: var(--info-color);
+        }
+        
+        .info-box ul {
+            margin-left: 20px;
+        }
+
+        .deezer-box h3 {
+            margin-top: 0;
+            margin-bottom: 8px;
+            color: var(--primary-color);
+        }
+
+        .deezer-box label {
+            display: block;
+            font-size: 0.9rem;
+            margin-top: 8px;
+            margin-bottom: 2px;
+            color: var(--text-secondary);
+        }
+
+        .deezer-box input[type="text"] {
+            width: 100%;
+            padding: 6px 8px;
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-size: 0.9rem;
+        }
+
+        .deezer-actions {
+            margin-top: 10px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        #deezerStatus {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: var(--card-bg);
+            box-shadow: var(--shadow);
+        }
+        
+        th {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 10px 8px;
+            text-align: left;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            cursor: pointer;
+            user-select: none;
+            white-space: nowrap;
+            font-size: 0.9rem;
+        }
+        
+        th:hover {
+            background-color: #ff5548;
+        }
+        
+        th::after {
+            content: ' ⇅';
+            font-size: 11px;
+            opacity: 0.5;
+        }
+        
+        th.sorted-asc::after {
+            content: ' ↑';
+            opacity: 1;
+        }
+        
+        th.sorted-desc::after {
+            content: ' ↓';
+            opacity: 1;
+        }
+        
+        td {
+            padding: 8px;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 0.9rem;
+        }
+        
+        tr:hover {
+            background-color: var(--row-hover);
+        }
+        
+        tr.completed {
+            opacity: 0.5;
+            background-color: var(--completed-bg);
+        }
+        
+        tr.completed td {
+            text-decoration: line-through;
+            color: var(--text-muted);
+        }
+        
+        tr.potential-duplicate {
+            background-color: rgba(255, 152, 0, 0.08);
+        }
+        
+        [data-theme="dark"] tr.potential-duplicate {
+            background-color: rgba(255, 152, 0, 0.18);
+        }
+
+        tr.in-deezer:not(.completed) {
+            background-color: rgba(76, 175, 80, 0.08);
+        }
+        
+        .track-name {
+            color: var(--danger-color);
+            font-weight: 500;
+        }
+        
+        tr.completed .track-name {
+            color: var(--text-muted);
+        }
+        
+        .artist-name {
+            color: var(--text-secondary);
+        }
+        
+        .album-name {
+            color: var(--text-muted);
+            font-size: 0.9em;
+        }
+        
+        .deezer-link {
+            color: var(--info-color);
+            text-decoration: none;
+            font-weight: 500;
+        }
+        
+        .deezer-link:hover {
+            text-decoration: underline;
+        }
+
+        .presence-cell {
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+        .presence-unknown {
+            color: var(--text-muted);
+        }
+        .presence-am1,
+        .presence-am2,
+        .presence-both {
+            color: var(--success-color);
+        }
+        .presence-absent {
+            color: var(--danger-color);
+        }
+        
+        .search-box {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: var(--card-bg);
+            border-radius: 8px;
+            box-shadow: var(--shadow);
+        }
+        
+        #searchInput {
+            width: 100%;
+            padding: 8px 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-size: 14px;
+            margin-bottom: 10px;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+        }
+        
+        #counter {
+            margin-top: 10px;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+        }
+        
+        .checkbox-column {
+            width: 40px;
+            text-align: center;
+        }
+        
+        input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+        
+        .control-buttons {
+            margin: 10px 0;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        button {
+            padding: 7px 14px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.3s;
+            font-weight: 500;
+        }
+        
+        button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 3px 6px rgba(0,0,0,0.2);
+        }
+        
+        .btn-primary {
+            background-color: var(--info-color);
+            color: white;
+        }
+        
+        .btn-success {
+            background-color: var(--success-color);
+            color: white;
+        }
+        
+        .btn-danger {
+            background-color: var(--danger-color);
+            color: white;
+        }
+        
+        .btn-warning {
+            background-color: var(--warning-color);
+            color: white;
+        }
+        
+        .btn-muted {
+            background-color: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 24px;
+            background-color: var(--completed-bg);
+            border-radius: 12px;
+            overflow: hidden;
+            margin: 10px 0 20px 0;
+            position: relative;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--success-color) 0%, #45a049 100%);
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 0.85rem;
+        }
+        
+        .filter-options {
+            display: flex;
+            gap: 15px;
+            margin: 10px 0;
+            flex-wrap: wrap;
+        }
+        
+        .filter-option {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 0.9rem;
+        }
+        
+        .filter-option input[type="radio"] {
+            width: auto;
+            height: auto;
+        }
+        
+        .file-input-row {
+            margin-top: 10px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+            font-size: 0.9rem;
+        }
+        
+        .file-input-row input[type="file"] {
+            font-size: 0.85rem;
+        }
+        
+        .file-name {
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+
+        /* Colonne d'actions & bouton recherche Deezer */
+        th.actions-header {
+            text-align: center;
+            width: 80px;
+        }
+
+        td.actions-column {
+            text-align: center;
+            white-space: nowrap;
+        }
+
+        .search-btn {
+            border: none;
+            border-radius: 999px;
+            padding: 4px 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            background: var(--primary-color);
+            color: #fff;
+            transition: transform 0.05s ease, box-shadow 0.1s ease, opacity 0.1s ease;
+        }
+
+        .search-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 0 0 1px rgba(0,0,0,0.05);
+            opacity: 0.9;
+        }
+
+        tr.active-row {
+            outline: 2px solid rgba(0, 123, 255, 0.4);
+            background-color: rgba(0, 123, 255, 0.04);
+        }
+
+        tr.hidden-focus {
+            display: none !important;
+        }
+
+        .focus-controls {
+            margin-top: 0.75rem;
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            flex-wrap: wrap;
+            font-size: 0.9rem;
+        }
+
+        .focus-toggle input {
+            margin-right: 0.25rem;
+        }
+
+        .focus-pagination {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .focus-pagination button {
+            border-radius: 999px;
+            border: 1px solid rgba(0,0,0,0.1);
+            padding: 2px 10px;
+            background: var(--card-bg);
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+
+        #focusPageInfo {
+            opacity: 0.8;
+        }
+
+        /* Boutons de copie */
+        .copy-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            opacity: 0.5;
+            font-size: 0.8rem;
+            margin-left: 4px;
+            transition: opacity 0.15s ease;
+        }
+        .copy-btn:hover {
+            opacity: 1;
+        }
+        .copy-btn.copied {
+            color: var(--success-color);
+            opacity: 1;
+        }
+        
+        @media (max-width: 768px) {
+            body {
+                margin: 10px;
+            }
+            
+            .control-buttons {
+                flex-direction: column;
+            }
+            
+            button {
+                width: 100%;
+            }
+            
+            table {
+                font-size: 13px;
+            }
+            
+            th, td {
+                padding: 6px 4px;
+            }
+            
+            .header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            
+            .theme-toggle {
+                margin-left: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🎵 Tri Deezer – Morceaux manquants (CSV + API Deezer)</h1>
+        <button class="theme-toggle" onclick="toggleTheme()" title="Changer de thème">🌓</button>
+    </div>
+    
+    <div class="info-box">
+        <h3>ℹ️ Comment ça marche</h3>
+        <ul>
+            <li>📂 Charge un CSV (<strong>Track name, Artist name, Album, Deezer ID, Potential Duplicate</strong>).</li>
+            <li>📡 Entre les deux playlists Deezer publiques (Library AM 1 et 2).</li>
+            <li>🧠 La webapp interroge l'API Deezer et marque les morceaux déjà présents dans tes playlists.</li>
+            <li>✅ Tu coches au fur et à mesure ce que tu as traité (sauvegarde auto dans le navigateur).</li>
+            <li>🎹 Raccourcis : ↑ ↓ pour naviguer, <strong>Espace</strong> pour cocher, <strong>S</strong> pour ouvrir Deezer.</li>
+        </ul>
+    </div>
+    
+    <div class="summary">
+        <h2>📊 Résumé</h2>
+        <div class="stat">📁 <strong>Fichier chargé :</strong> <span id="summaryFileName">aucun</span></div>
+        <div class="stat">🎵 <strong>Morceaux dans le CSV :</strong> <span id="summaryTotal">0</span></div>
+        <div class="stat stat-warning">🔍 <strong>Potentiels doublons :</strong> <span id="summaryDuplicates">0</span></div>
+        <div class="stat missing">⚠️ <strong>Morceaux manquants (total) :</strong> <span id="summaryMissing">0</span></div>
+        <div class="stat progress-stat">📈 <strong>Progression :</strong> <span id="progressText">0 / 0 traités (0%)</span></div>
+        <div class="stat">✅ <strong>Déjà présents dans playlists :</strong> <span id="summaryInDeezer">0</span></div>
+    </div>
+    
+    <div class="progress-bar">
+        <div class="progress-fill" id="progressBar" style="width: 0%">0%</div>
+    </div>
+
+    <div class="deezer-box">
+        <h3>📡 Playlists Deezer à surveiller</h3>
+        <p style="font-size:0.9rem; color:var(--text-secondary); margin-bottom:6px;">
+            Colle l'URL complète ou juste l'ID de tes playlists publiques (par ex. Library AM 1 et Library AM 2).
+        </p>
+        <label for="playlist1Input">Playlist 1 (Library AM 1)</label>
+        <input type="text" id="playlist1Input" placeholder="https://www.deezer.com/playlist/1234567890 ou 1234567890">
+        
+        <label for="playlist2Input">Playlist 2 (Library AM 2)</label>
+        <input type="text" id="playlist2Input" placeholder="https://www.deezer.com/playlist/0987654321 ou 0987654321">
+
+        <div class="deezer-actions">
+            <button class="btn-primary" type="button" onclick="loadDeezerPlaylists()">📡 Analyser depuis Deezer</button>
+            <span id="deezerStatus"></span>
+        </div>
+    </div>
+    
+    <div class="search-box">
+        <input type="text" id="searchInput" onkeyup="searchTable()" placeholder="🔍 Rechercher un morceau, artiste ou album...">
+        
+        <div class="filter-options">
+            <div class="filter-option">
+                <input type="radio" id="showAll" name="filter" value="all" checked onchange="applyFilter()">
+                <label for="showAll">Tout afficher</label>
+            </div>
+            <div class="filter-option">
+                <input type="radio" id="showPending" name="filter" value="pending" onchange="applyFilter()">
+                <label for="showPending">Non traités seulement</label>
+            </div>
+            <div class="filter-option">
+                <input type="radio" id="showCompleted" name="filter" value="completed" onchange="applyFilter()">
+                <label for="showCompleted">Traités seulement</label>
+            </div>
+            <div class="filter-option">
+                <input type="radio" id="showDuplicates" name="filter" value="duplicates" onchange="applyFilter()">
+                <label for="showDuplicates">Potentiels doublons</label>
+            </div>
+        </div>
+        
+        <div class="file-input-row">
+            <label for="csvInput">📂 Charger un CSV :</label>
+            <input type="file" id="csvInput" accept=".csv,text/csv">
+            <span class="file-name" id="fileNameInfo"></span>
+            <button class="btn-muted" type="button" onclick="clearAll()">🗑️ Effacer la progression</button>
+        </div>
+        
+        <div class="control-buttons">
+            <button class="btn-success" type="button" onclick="checkVisible()">✓ Cocher les visibles</button>
+            <button class="btn-warning" type="button" onclick="uncheckVisible()">✗ Décocher les visibles</button>
+            <button class="btn-primary" type="button" onclick="exportRemaining()">📥 Exporter non traités (CSV)</button>
+        </div>
+        
+        <div class="focus-controls">
+            <label class="focus-toggle">
+                <input type="checkbox" id="focusModeToggle">
+                Mode focus (100 lignes)
+            </label>
+            <div class="focus-pagination" id="focusPagination" style="display:none">
+                <button type="button" id="focusPrevBtn">⬅︎ Précédent</button>
+                <span id="focusPageInfo"></span>
+                <button type="button" id="focusNextBtn">Suivant ➝</button>
+            </div>
+        </div>
+
+        <div id="counter">0 / 0 morceaux affichés</div>
+    </div>
+    
+    <h2 style="color: var(--danger-color); margin-bottom: 8px;">⚠️ Morceaux manquants</h2>
+    <table id="missingTable">
+        <thead>
+            <tr>
+                <th class="checkbox-column" onclick="event.stopPropagation()">✓</th>
+                <th onclick="sortTable(1)" data-sort-column="1">N°</th>
+                <th onclick="sortTable(2)" data-sort-column="2">Titre</th>
+                <th onclick="sortTable(3)" data-sort-column="3">Artiste</th>
+                <th onclick="sortTable(4)" data-sort-column="4">Album</th>
+                <th onclick="sortTable(5)" data-sort-column="5">Présence Deezer</th>
+                <th onclick="sortTable(6)" data-sort-column="6">Deezer ID</th>
+                <th class="actions-header">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            <!-- lignes générées à partir du CSV -->
+        </tbody>
+    </table>
+    
+    <script>
+        // Config
+        const STORAGE_KEY = 'deezer_tri_status_v2';
+        const THEME_KEY = 'deezer_tri_theme';
+        let completedTracks = {}; // storageKey -> true
+        let currentSortColumn = -1;
+        let sortAscending = true;
+        let activeRow = null;
+        let focusModeEnabled = false;
+        let focusPage = 0;
+        const FOCUS_PAGE_SIZE = 100;
+
+        // Maps Deezer (normalised title+artist -> {am1:bool, am2:bool})
+        let deezerPresenceMap = {}; 
+
+        // Thème
+        function initTheme() {
+            const savedTheme = localStorage.getItem(THEME_KEY) || 'dark';
+            document.documentElement.setAttribute('data-theme', savedTheme);
+        }
+
+        function toggleTheme() {
+            const current = document.documentElement.getAttribute('data-theme') || 'light';
+            const next = current === 'light' ? 'dark' : 'light';
+            document.documentElement.setAttribute('data-theme', next);
+            localStorage.setItem(THEME_KEY, next);
+        }
+
+        // Sauvegarde statut
+        function saveProgress() {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(completedTracks));
+            } catch (e) {
+                console.error('Erreur saveProgress', e);
+            }
+        }
+
+        function loadProgress() {
+            try {
+                const data = localStorage.getItem(STORAGE_KEY);
+                if (data) {
+                    completedTracks = JSON.parse(data);
+                } else {
+                    completedTracks = {};
+                }
+            } catch (e) {
+                console.error('Erreur loadProgress', e);
+                completedTracks = {};
+            }
+        }
+
+        function restoreCompletionFromStorage() {
+            const rows = document.querySelectorAll('#missingTable tbody tr');
+            rows.forEach(row => {
+                const cb = row.querySelector('input[type="checkbox"]');
+                if (!cb) return;
+                const key = cb.dataset.storageKey;
+                if (key && completedTracks[key]) {
+                    cb.checked = true;
+                    row.classList.add('completed');
+                } else {
+                    cb.checked = false;
+                    row.classList.remove('completed');
+                }
+            });
+            updateProgress();
+        }
+
+        // Progression
+        function updateProgress() {
+            const rows = document.querySelectorAll('#missingTable tbody tr');
+            let completed = 0;
+            rows.forEach(row => {
+                const cb = row.querySelector('input[type="checkbox"]');
+                if (cb && cb.checked) completed++;
+            });
+            const total = rows.length;
+            const percentage = total ? Math.round((completed / total) * 100) : 0;
+
+            const bar = document.getElementById('progressBar');
+            const text = document.getElementById('progressText');
+            if (bar) {
+                bar.style.width = percentage + '%';
+                bar.textContent = percentage + '%';
+            }
+            if (text) {
+                text.textContent = completed.toLocaleString('fr-FR') + ' / ' +
+                    total.toLocaleString('fr-FR') + ' traités (' + percentage + '%)';
+            }
+        }
+
+        // Navigation / focus helpers
+        function getBaseVisibleRows() {
+            return Array.from(document.querySelectorAll('#missingTable tbody tr'))
+                .filter(row => row.style.display !== 'none');
+        }
+
+        function getVisibleRows() {
+            return Array.from(document.querySelectorAll('#missingTable tbody tr'))
+                .filter(row =>
+                    row.style.display !== 'none' &&
+                    !row.classList.contains('hidden-focus')
+                );
+        }
+
+        function setActiveRow(row) {
+            if (activeRow && activeRow !== row) {
+                activeRow.classList.remove('active-row');
+            }
+            activeRow = row;
+            if (activeRow) {
+                activeRow.classList.add('active-row');
+                activeRow.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            }
+        }
+
+        function resetActiveRowAfterFilter() {
+            const visible = getVisibleRows();
+            if (visible.length > 0) {
+                setActiveRow(visible[0]);
+            } else {
+                setActiveRow(null);
+            }
+        }
+
+        // Actions Deezer (recherche)
+        function initActionsColumn() {
+            const table = document.getElementById('missingTable');
+            if (!table) return;
+            const tbody = table.tBodies[0];
+            if (!tbody) return;
+
+            const rows = Array.from(tbody.rows);
+            rows.forEach(row => {
+                const existing = row.querySelector('td.actions-column');
+                if (existing) existing.remove();
+
+                const titleCell = row.querySelector('.track-name');
+                const artistCell = row.querySelector('.artist-name');
+                
+                const title = titleCell ? titleCell.childNodes[0].textContent.trim() : '';
+                const artist = artistCell ? artistCell.childNodes[0].textContent.trim() : '';
+
+                const searchUrl = 'https://www.deezer.com/search/' +
+                    encodeURIComponent(title + ' ' + artist);
+
+                const td = document.createElement('td');
+                td.className = 'actions-column';
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'search-btn';
+                btn.textContent = '🔍';
+                btn.title = 'Rechercher ce titre sur Deezer';
+                btn.dataset.searchUrl = searchUrl;
+                btn.addEventListener('click', () => {
+                    window.open(btn.dataset.searchUrl, '_blank');
+                });
+                td.appendChild(btn);
+                row.appendChild(td);
+            });
+        }
+
+        // Mode focus
+        function applyFocusPagination() {
+            const allRows = getBaseVisibleRows();
+            const info = document.getElementById('focusPageInfo');
+
+            if (!focusModeEnabled) {
+                allRows.forEach(row => row.classList.remove('hidden-focus'));
+                if (info) info.textContent = '';
+                return;
+            }
+
+            const total = allRows.length;
+            const start = focusPage * FOCUS_PAGE_SIZE;
+            const end = start + FOCUS_PAGE_SIZE;
+
+            allRows.forEach((row, idx) => {
+                const inPage = idx >= start && idx < end;
+                row.classList.toggle('hidden-focus', !inPage);
+            });
+
+            if (info) {
+                const from = total === 0 ? 0 : Math.min(total, start + 1);
+                const to = Math.min(total, end);
+                info.textContent = from + '–' + to + ' / ' + total;
+            }
+        }
+
+        function initFocusMode() {
+            const toggle = document.getElementById('focusModeToggle');
+            const pagination = document.getElementById('focusPagination');
+            const prevBtn = document.getElementById('focusPrevBtn');
+            const nextBtn = document.getElementById('focusNextBtn');
+
+            toggle.addEventListener('change', () => {
+                focusModeEnabled = toggle.checked;
+                focusPage = 0;
+                pagination.style.display = focusModeEnabled ? 'inline-flex' : 'none';
+                applyFocusPagination();
+                resetActiveRowAfterFilter();
+            });
+
+            prevBtn.addEventListener('click', () => {
+                if (focusPage > 0) {
+                    focusPage--;
+                    applyFocusPagination();
+                    resetActiveRowAfterFilter();
+                }
+            });
+
+            nextBtn.addEventListener('click', () => {
+                const total = getBaseVisibleRows().length;
+                const maxPage = Math.max(0, Math.floor((total - 1) / FOCUS_PAGE_SIZE));
+                if (focusPage < maxPage) {
+                    focusPage++;
+                    applyFocusPagination();
+                    resetActiveRowAfterFilter();
+                }
+            });
+        }
+
+        // Navigation clavier
+        function initKeyboardNavigation() {
+            document.addEventListener('keydown', function (e) {
+                const tag = e.target.tagName;
+                if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) {
+                    return;
+                }
+
+                const visibleRows = getVisibleRows();
+                if (!visibleRows.length) return;
+
+                if (!activeRow || !visibleRows.includes(activeRow)) {
+                    setActiveRow(visibleRows[0]);
+                }
+
+                let idx = visibleRows.indexOf(activeRow);
+
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    if (idx < visibleRows.length - 1) {
+                        setActiveRow(visibleRows[idx + 1]);
+                    }
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    if (idx > 0) {
+                        setActiveRow(visibleRows[idx - 1]);
+                    }
+                } else if (e.key === ' ') {
+                    e.preventDefault();
+                    const checkbox = activeRow.querySelector('input[type="checkbox"]');
+                    if (checkbox) {
+                        checkbox.checked = !checkbox.checked;
+                        updateTrackStatusFromCheckbox(checkbox);
+                    }
+                } else if (e.key.toLowerCase() === 's') {
+                    e.preventDefault();
+                    const btn = activeRow.querySelector('.search-btn');
+                    if (btn && btn.dataset.searchUrl) {
+                        window.open(btn.dataset.searchUrl, '_blank');
+                    }
+                }
+            });
+        }
+
+        // Boutons de copie
+        function initCopyButtons() {
+            document.querySelectorAll('.track-name, .artist-name, .album-name').forEach(cell => {
+                if (cell.querySelector('.copy-btn')) return;
+                const textNode = cell.childNodes[0];
+                if (!textNode) return;
+                const originalText = textNode.textContent.trim();
+                if (!originalText) return;
+                const btn = document.createElement('button');
+                btn.className = 'copy-btn';
+                btn.textContent = '⧉';
+                btn.title = 'Copier dans le presse-papier';
+                btn.addEventListener('click', async e => {
+                    e.stopPropagation();
+                    try {
+                        await navigator.clipboard.writeText(originalText);
+                        btn.textContent = '✅';
+                        btn.classList.add('copied');
+                        setTimeout(() => {
+                            btn.textContent = '⧉';
+                            btn.classList.remove('copied');
+                        }, 900);
+                    } catch (err) {
+                        console.error('Échec copie :', err);
+                    }
+                });
+                cell.appendChild(btn);
+            });
+        }
+
+        // Mise à jour statut depuis checkbox
+        function updateTrackStatusFromCheckbox(cb) {
+            const key = cb.dataset.storageKey;
+            const row = cb.closest('tr');
+            if (!key || !row) return;
+
+            if (cb.checked) {
+                completedTracks[key] = true;
+                row.classList.add('completed');
+            } else {
+                delete completedTracks[key];
+                row.classList.remove('completed');
+            }
+            saveProgress();
+            updateProgress();
+        }
+
+        // Tri du tableau
+        function sortTable(column) {
+            const table = document.getElementById('missingTable');
+            const tbody = table.tBodies[0];
+            const rows = Array.from(tbody.rows);
+
+            if (currentSortColumn === column) {
+                sortAscending = !sortAscending;
+            } else {
+                currentSortColumn = column;
+                sortAscending = true;
+            }
+
+            const headers = table.tHead.rows[0].cells;
+            for (let i = 0; i < headers.length; i++) {
+                headers[i].classList.remove('sorted-asc', 'sorted-desc');
+            }
+            if (column >= 1 && column <= 6) {
+                headers[column].classList.add(sortAscending ? 'sorted-asc' : 'sorted-desc');
+            }
+
+            rows.sort((a, b) => {
+                let aValue = a.cells[column].textContent.trim();
+                let bValue = b.cells[column].textContent.trim();
+
+                if (column === 1) {
+                    const av = parseInt(a.cells[column].getAttribute('data-sort-value') || '0', 10);
+                    const bv = parseInt(b.cells[column].getAttribute('data-sort-value') || '0', 10);
+                    return sortAscending ? av - bv : bv - av;
+                }
+
+                aValue = aValue.toLowerCase();
+                bValue = bValue.toLowerCase();
+
+                if (sortAscending) {
+                    return aValue.localeCompare(bValue);
+                } else {
+                    return bValue.localeCompare(aValue);
+                }
+            });
+
+            rows.forEach(row => tbody.appendChild(row));
+            applyFocusPagination();
+            resetActiveRowAfterFilter();
+        }
+
+        // Recherche & filtre
+        function searchTable() {
+            applyFilter();
+        }
+
+        function applyFilter() {
+            const searchInput = document.getElementById('searchInput');
+            const searchFilter = searchInput.value.toUpperCase();
+            const filterType = document.querySelector('input[name="filter"]:checked').value;
+            const table = document.getElementById('missingTable');
+            const tr = table.getElementsByTagName('tr');
+            let visibleCount = 0;
+
+            for (let i = 1; i < tr.length; i++) {
+                const row = tr[i];
+                const checkbox = row.querySelector('input[type="checkbox"]');
+                const isDuplicate = row.classList.contains('potential-duplicate');
+                const td = row.getElementsByTagName('td');
+                let txtValue = '';
+
+                for (let j = 1; j < td.length; j++) {
+                    txtValue += (td[j].textContent || td[j].innerText);
+                }
+
+                const matchesSearch = txtValue.toUpperCase().indexOf(searchFilter) > -1;
+
+                let matchesStatus = true;
+                if (filterType === 'pending') {
+                    matchesStatus = checkbox && !checkbox.checked;
+                } else if (filterType === 'completed') {
+                    matchesStatus = checkbox && checkbox.checked;
+                } else if (filterType === 'duplicates') {
+                    matchesStatus = isDuplicate;
+                }
+
+                if (matchesSearch && matchesStatus) {
+                    row.style.display = '';
+                    visibleCount++;
+                } else {
+                    row.style.display = 'none';
+                }
+            }
+
+            const counter = document.getElementById('counter');
+            const totalRows = tr.length - 1;
+            counter.textContent = visibleCount.toLocaleString('fr-FR') + ' / ' +
+                totalRows.toLocaleString('fr-FR') + ' morceaux affichés';
+
+            if (focusModeEnabled) {
+                focusPage = 0;
+            }
+            applyFocusPagination();
+            resetActiveRowAfterFilter();
+        }
+
+        // Cocher / décocher visibles
+        function checkVisible() {
+            const rows = document.querySelectorAll('#missingTable tbody tr');
+            rows.forEach(row => {
+                if (row.style.display === 'none' || row.classList.contains('hidden-focus')) return;
+                const cb = row.querySelector('input[type="checkbox"]');
+                if (cb && !cb.checked) {
+                    cb.checked = true;
+                    updateTrackStatusFromCheckbox(cb);
+                }
+            });
+        }
+
+        function uncheckVisible() {
+            const rows = document.querySelectorAll('#missingTable tbody tr');
+            rows.forEach(row => {
+                if (row.style.display === 'none' || row.classList.contains('hidden-focus')) return;
+                const cb = row.querySelector('input[type="checkbox"]');
+                if (cb && cb.checked) {
+                    cb.checked = false;
+                    updateTrackStatusFromCheckbox(cb);
+                }
+            });
+        }
+
+        // Export des non traités (toutes lignes)
+        function exportRemaining() {
+            const rows = document.querySelectorAll('#missingTable tbody tr');
+            const data = [];
+            rows.forEach(row => {
+                const cb = row.querySelector('input[type="checkbox"]');
+                if (!cb || cb.checked) return;
+                const cols = row.querySelectorAll('td');
+                const track = cols[2]?.childNodes[0]?.textContent.trim() || '';
+                const artist = cols[3]?.childNodes[0]?.textContent.trim() || '';
+                const album = cols[4]?.childNodes[0]?.textContent.trim() || '';
+                const presence = cols[5]?.textContent.trim() || '';
+                const deezerId = (cols[6]?.querySelector('.deezer-link')?.textContent.trim() || '').split(' ')[0];
+                data.push([track, artist, album, deezerId, presence]);
+            });
+
+            if (!data.length) {
+                alert('Il ne reste aucun morceau non traité à exporter.');
+                return;
+            }
+
+            const header = ['Track name', 'Artist name', 'Album', 'Deezer ID', 'Presence'];
+            const lines = [header].concat(data).map(cols =>
+                cols.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')
+            );
+            const csvContent = lines.join('\n');
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            const now = new Date();
+            const stamp = now.toISOString().slice(0, 10);
+            link.download = 'deezer_non_traites_' + stamp + '.csv';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+
+        // Clear progression
+        function clearAll() {
+            if (!confirm('Effacer toute la progression (tous les morceaux décochés) ?')) return;
+            completedTracks = {};
+            saveProgress();
+            const rows = document.querySelectorAll('#missingTable tbody tr');
+            rows.forEach(row => {
+                const cb = row.querySelector('input[type="checkbox"]');
+                if (cb) cb.checked = false;
+                row.classList.remove('completed');
+            });
+            updateProgress();
+        }
+
+        // CSV parsing
+        function parseCsv(text) {
+            const lines = text.trim().split(/\r?\n/);
+            if (!lines.length) return [];
+            const rows = [];
+            for (let i = 1; i < lines.length; i++) { // skip header
+                const line = lines[i];
+                if (!line.trim()) continue;
+                const cols = [];
+                let cur = '';
+                let inQuotes = false;
+                for (let j = 0; j < line.length; j++) {
+                    const ch = line[j];
+                    if (ch === '"') {
+                        if (inQuotes && line[j + 1] === '"') {
+                            cur += '"';
+                            j++;
+                        } else {
+                            inQuotes = !inQuotes;
+                        }
+                    } else if (ch === ',' && !inQuotes) {
+                        cols.push(cur);
+                        cur = '';
+                    } else {
+                        cur += ch;
+                    }
+                }
+                cols.push(cur);
+                rows.push(cols);
+            }
+            return rows;
+        }
+
+        function loadCsvToTable(text, fileName) {
+            const rows = parseCsv(text);
+            const tbody = document.querySelector('#missingTable tbody');
+            tbody.innerHTML = '';
+
+            let duplicateCount = 0;
+
+            rows.forEach((cols, index) => {
+                const track = (cols[0] || '').trim();
+                const artist = (cols[1] || '').trim();
+                const album = (cols[2] || '').trim();
+                const deezerId = (cols[3] || '').trim();
+                const potential = (cols[4] || '').trim().toLowerCase();
+                const isDuplicate = potential.startsWith('o'); // "Oui" / "oui"
+
+                const tr = document.createElement('tr');
+                if (isDuplicate) {
+                    tr.classList.add('potential-duplicate');
+                    duplicateCount++;
+                }
+
+                const storageKey = deezerId ? ('id:' + deezerId) : ('meta:' + track + '|||' + artist + '|||' + album);
+
+                // checkbox
+                const tdCb = document.createElement('td');
+                tdCb.className = 'checkbox-column';
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.dataset.storageKey = storageKey;
+                cb.addEventListener('change', () => updateTrackStatusFromCheckbox(cb));
+                tdCb.appendChild(cb);
+                tr.appendChild(tdCb);
+
+                // index
+                const tdIndex = document.createElement('td');
+                tdIndex.setAttribute('data-sort-value', String(index + 1));
+                tdIndex.textContent = String(index + 1);
+                tr.appendChild(tdIndex);
+
+                // titre
+                const tdTitle = document.createElement('td');
+                tdTitle.className = 'track-name';
+                tdTitle.appendChild(document.createTextNode(track));
+                tr.appendChild(tdTitle);
+
+                // artiste
+                const tdArtist = document.createElement('td');
+                tdArtist.className = 'artist-name';
+                tdArtist.appendChild(document.createTextNode(artist));
+                tr.appendChild(tdArtist);
+
+                // album
+                const tdAlbum = document.createElement('td');
+                tdAlbum.className = 'album-name';
+                tdAlbum.appendChild(document.createTextNode(album));
+                tr.appendChild(tdAlbum);
+
+                // présence Deezer (par défaut)
+                const tdPresence = document.createElement('td');
+                tdPresence.className = 'presence-cell presence-unknown';
+                tdPresence.textContent = '⏳ Pas encore vérifié';
+                tr.appendChild(tdPresence);
+
+                // deezer id
+                const tdId = document.createElement('td');
+                if (deezerId) {
+                    const a = document.createElement('a');
+                    a.href = 'https://www.deezer.com/track/' + encodeURIComponent(deezerId);
+                    a.target = '_blank';
+                    a.className = 'deezer-link';
+                    a.title = 'Ouvrir dans Deezer';
+                    a.textContent = deezerId + ' 🔗';
+                    tdId.appendChild(a);
+                } else {
+                    tdId.textContent = '';
+                }
+                tr.appendChild(tdId);
+
+                tbody.appendChild(tr);
+            });
+
+            // Stats résumé
+            const totalTracks = rows.length;
+            document.getElementById('summaryFileName').textContent = fileName || 'non nommé';
+            document.getElementById('summaryTotal').textContent = totalTracks.toLocaleString('fr-FR');
+            document.getElementById('summaryDuplicates').textContent = duplicateCount.toLocaleString('fr-FR');
+            document.getElementById('summaryMissing').textContent = totalTracks.toLocaleString('fr-FR');
+            document.getElementById('summaryInDeezer').textContent = '0';
+
+            // Ré-appliquer progression
+            restoreCompletionFromStorage();
+
+            initActionsColumn();
+            initCopyButtons();
+            applyFilter();
+            updateProgress();
+        }
+
+        function initCsvInput() {
+            const input = document.getElementById('csvInput');
+            const info = document.getElementById('fileNameInfo');
+            input.addEventListener('change', () => {
+                const file = input.files[0];
+                if (!file) return;
+                info.textContent = file.name;
+                const reader = new FileReader();
+                reader.onload = e => {
+                    loadCsvToTable(e.target.result, file.name);
+                };
+                reader.readAsText(file, 'utf-8');
+            });
+        }
+
+        // --- API Deezer ---
+        function extractPlaylistId(str) {
+            const trimmed = (str || '').trim();
+            if (!trimmed) return null;
+            const m = trimmed.match(/playlist\/(\d+)/i);
+            if (m) return m[1];
+            if (/^\d+$/.test(trimmed)) return trimmed;
+            return null;
+        }
+
+        function normalise(text) {
+            return (text || '')
+                .toLowerCase()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .replace(/\s*\(.*?\)\s*/g, ' ')
+                .replace(/\s+feat\.?.*$/g, ' ')
+                .replace(/[\s\-]+/g, ' ')
+                .trim();
+        }
+
+        
+        async function fetchPlaylistTracks(playlistId) {
+            const res = await fetch('/deezer/playlist/' + encodeURIComponent(playlistId));
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const data = await res.json();
+            return data.data || [];
+        }
+
+            }
+            return allTracks;
+        }
+
+        function applyDeezerPresenceToTable() {
+            const rows = document.querySelectorAll('#missingTable tbody tr');
+            let inDeezerCount = 0;
+
+            rows.forEach(row => {
+                const titleCell = row.querySelector('.track-name');
+                const artistCell = row.querySelector('.artist-name');
+                const presenceCell = row.querySelector('.presence-cell');
+                if (!titleCell || !artistCell || !presenceCell) return;
+
+                const title = titleCell.childNodes[0]?.textContent.trim() || '';
+                const artist = artistCell.childNodes[0]?.textContent.trim() || '';
+
+                const key = normalise(title) + '::' + normalise(artist);
+                const info = deezerPresenceMap[key];
+
+                row.classList.remove('in-deezer');
+                presenceCell.className = 'presence-cell presence-unknown';
+                presenceCell.textContent = '⏳ Pas encore vérifié';
+
+                if (!info) {
+                    presenceCell.classList.replace('presence-unknown', 'presence-absent');
+                    presenceCell.textContent = '❌ Absent';
+                    return;
+                }
+
+                row.classList.add('in-deezer');
+                inDeezerCount++;
+
+                if (info.am1 && info.am2) {
+                    presenceCell.classList.replace('presence-unknown', 'presence-both');
+                    presenceCell.textContent = '✅ AM1 + AM2';
+                } else if (info.am1) {
+                    presenceCell.classList.replace('presence-unknown', 'presence-am1');
+                    presenceCell.textContent = '✅ AM1';
+                } else if (info.am2) {
+                    presenceCell.classList.replace('presence-unknown', 'presence-am2');
+                    presenceCell.textContent = '✅ AM2';
+                } else {
+                    presenceCell.classList.replace('presence-unknown', 'presence-absent');
+                    presenceCell.textContent = '❌ Absent';
+                }
+            });
+
+            document.getElementById('summaryInDeezer').textContent =
+                inDeezerCount.toLocaleString('fr-FR');
+        }
+
+        async function loadDeezerPlaylists() {
+            const statusEl = document.getElementById('deezerStatus');
+            const p1 = extractPlaylistId(document.getElementById('playlist1Input').value);
+            const p2 = extractPlaylistId(document.getElementById('playlist2Input').value);
+
+            if (!p1 && !p2) {
+                alert('Merci de saisir au moins une playlist Deezer valide (URL ou ID).');
+                return;
+            }
+
+            statusEl.textContent = '⏳ Récupération depuis Deezer...';
+            deezerPresenceMap = {};
+
+            try {
+                if (p1) {
+                    const tracks1 = await fetchPlaylistTracks(p1);
+                    tracks1.forEach(t => {
+                        const key = normalise(t.title) + '::' + normalise(t.artist && t.artist.name);
+                        if (!deezerPresenceMap[key]) deezerPresenceMap[key] = { am1: false, am2: false };
+                        deezerPresenceMap[key].am1 = true;
+                    });
+                }
+
+                if (p2) {
+                    const tracks2 = await fetchPlaylistTracks(p2);
+                    tracks2.forEach(t => {
+                        const key = normalise(t.title) + '::' + normalise(t.artist && t.artist.name);
+                        if (!deezerPresenceMap[key]) deezerPresenceMap[key] = { am1: false, am2: false };
+                        deezerPresenceMap[key].am2 = true;
+                    });
+                }
+
+                applyDeezerPresenceToTable();
+                statusEl.textContent = '✅ Analyse terminée.';
+            } catch (e) {
+                console.error('Erreur API Deezer', e);
+                statusEl.textContent = '❌ Erreur lors de l\'appel API Deezer (voir console).';
+            }
+        }
+
+        // Initialisation
+        window.onload = function() {
+            initTheme();
+            loadProgress();
+            initFocusMode();
+            initCsvInput();
+            initKeyboardNavigation();
+            updateProgress();
+        };
+    </script>
+</body>
+</html>
