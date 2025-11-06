@@ -672,7 +672,7 @@
         let focusPage = 0;
         const FOCUS_PAGE_SIZE = 100;
 
-        // Maps Deezer (normalised title+artist -> {am1:bool, am2:bool})
+        // Maps Deezer baseKey -> { am1: Set(featKeys), am2: Set(featKeys) }
         let deezerPresenceMap = {}; 
 
         // Thème
@@ -1299,36 +1299,301 @@
         }
 
         // --- API Deezer ---
-        function extractPlaylistId(str) {
-            const trimmed = (str || '').trim();
-            if (!trimmed) return null;
-            const m = trimmed.match(/playlist\/(\d+)/i);
-            if (m) return m[1];
-            if (/^\d+$/.test(trimmed)) return trimmed;
+        function extractPlaylistId(input) {
+            const value = (input || '').trim();
+            if (!value) return null;
+
+            try {
+                const url = new URL(value);
+                const pathMatch = url.pathname.match(/playlist\/(\d+)/i);
+                if (pathMatch) return pathMatch[1];
+                const byParam = url.searchParams.get('playlist_id');
+                if (byParam && /^\d+$/.test(byParam)) return byParam;
+            } catch (err) {
+                // not a URL, fall back to regex checks
+            }
+
+            const directMatch = value.match(/playlist\/(\d+)/i);
+            if (directMatch) return directMatch[1];
+            if (/^\d+$/.test(value)) return value;
             return null;
         }
 
-        function normalise(text) {
+        function normalizeName(text) {
             return (text || '')
+                .toString()
                 .toLowerCase()
                 .normalize('NFD')
                 .replace(/[\u0300-\u036f]/g, '')
-                .replace(/\s*\(.*?\)\s*/g, ' ')
-                .replace(/\s+feat\.?.*$/g, ' ')
-                .replace(/[\s\-]+/g, ' ')
+                .replace(/[’']/g, '')
+                .replace(/&/g, ' and ')
+                .replace(/[^a-z0-9]+/g, ' ')
+                .replace(/\s+/g, ' ')
                 .trim();
         }
 
-        
-        async function fetchPlaylistTracks(playlistId) {
-            const res = await fetch('/deezer/playlist/' + encodeURIComponent(playlistId));
-            if (!res.ok) throw new Error('HTTP ' + res.status);
-            const data = await res.json();
-            return data.data || [];
+        const TECHNICAL_VERSION_TERMS = [
+            'album version',
+            'radio version',
+            'radio edit',
+            'radio mix',
+            'remaster',
+            'remastered',
+            'mix',
+            'remix',
+            'mono',
+            'stereo',
+            'deluxe',
+            'single version',
+            'single edit',
+            'extended mix',
+            'extended version',
+            'main version'
+        ];
+        const NORMALIZED_TECH_TERMS = TECHNICAL_VERSION_TERMS.map(term => normalizeName(term));
+        const ARTISTIC_VERSION_PATTERN = /\b(live|acoustic|unplugged)\b/;
+        const FEAT_KEYWORD_PATTERN = /\b(feat\.?|ft\.?|featuring|with)\b/i;
+        const FEATURE_SPLITTER = /[,/&;]|(?:\s+x\s+)|(?:\sand\s)/i;
+
+        function isTechnicalAnnotation(fragment) {
+            if (!fragment) return false;
+            const normalized = normalizeName(fragment);
+            if (!normalized) return false;
+            if (ARTISTIC_VERSION_PATTERN.test(normalized)) return false;
+            return NORMALIZED_TECH_TERMS.some(term => normalized.includes(term));
         }
 
+        function stripTrailingTechnicalDescriptors(text) {
+            let value = text;
+            let guard = 0;
+            while (guard < 5) {
+                guard++;
+                const dashMatch = value.match(/[-–—:]\s*([^\-–—:()]+)\s*$/);
+                if (dashMatch && isTechnicalAnnotation(dashMatch[1])) {
+                    value = value.slice(0, dashMatch.index).trim();
+                    continue;
+                }
+                const plainMatch = value.match(/\b([a-z0-9\s]+)\s*$/i);
+                if (plainMatch && plainMatch.index > 0 && isTechnicalAnnotation(plainMatch[1])) {
+                    value = value.slice(0, plainMatch.index).trim();
+                    continue;
+                }
+                break;
             }
-            return allTracks;
+            return value;
+        }
+
+        function normalizeBaseTitle(title) {
+            if (!title) return '';
+            let working = title;
+
+            working = working.replace(/\(([^)]+)\)/g, (match, inner) =>
+                isTechnicalAnnotation(inner) ? ' ' : match
+            );
+
+            working = working.replace(/\[([^\]]+)\]/g, (match, inner) =>
+                isTechnicalAnnotation(inner) ? ' ' : match
+            );
+
+            working = stripTrailingTechnicalDescriptors(working);
+
+            return working.replace(/\s+/g, ' ').trim();
+        }
+
+        function extractFeaturings(fragment) {
+            if (!fragment) return [];
+            const cleaned = fragment
+                .replace(/[\[\]()]/g, ' ')
+                .replace(/\./g, ' ')
+                .replace(/\b(feat\.?|ft\.?|featuring|with)\b/gi, ' ');
+
+            return cleaned
+                .split(FEATURE_SPLITTER)
+                .map(part => normalizeName(part))
+                .filter(Boolean);
+        }
+
+        function splitTitleAndFeats(title) {
+            if (!title) {
+                return { baseTitle: '', features: [] };
+            }
+
+            let features = [];
+            let working = title;
+
+            working = working.replace(/\(([^)]+)\)/g, (match, inner) => {
+                if (FEAT_KEYWORD_PATTERN.test(inner)) {
+                    features.push(...extractFeaturings(inner));
+                    return ' ';
+                }
+                return match;
+            });
+
+            while (true) {
+                const match = working.match(/\b(feat\.?|ft\.?|featuring|with)\b(.*)$/i);
+                if (!match) break;
+                features.push(...extractFeaturings(match[0]));
+                working = working
+                    .slice(0, match.index)
+                    .replace(/[-–—:\s]+$/, ' ')
+                    .trim();
+            }
+
+            return { baseTitle: working.trim(), features };
+        }
+
+        function splitArtistAndFeats(artist) {
+            if (!artist) {
+                return { primaryArtist: '', features: [] };
+            }
+
+            let features = [];
+            let working = artist;
+
+            working = working.replace(/\(([^)]+)\)/g, (match, inner) => {
+                if (FEAT_KEYWORD_PATTERN.test(inner)) {
+                    features.push(...extractFeaturings(inner));
+                    return ' ';
+                }
+                return match;
+            });
+
+            while (true) {
+                const match = working.match(/\b(feat\.?|ft\.?|featuring|with)\b(.*)$/i);
+                if (!match) break;
+                features.push(...extractFeaturings(match[0]));
+                working = working.slice(0, match.index).trim();
+            }
+
+            return { primaryArtist: working.trim(), features };
+        }
+
+        function buildTrackSignature(title, artist, extraContributors = []) {
+            const { baseTitle, features: titleFeats } = splitTitleAndFeats(title);
+            const { primaryArtist, features: artistFeats } = splitArtistAndFeats(artist);
+
+            const normalizedTitle = normalizeName(normalizeBaseTitle(baseTitle));
+            const normalizedArtist = normalizeName(primaryArtist);
+
+            if (!normalizedTitle || !normalizedArtist) {
+                return { baseKey: '', featKey: '' };
+            }
+
+            const contributorFeats = Array.isArray(extraContributors)
+                ? extraContributors.map(name => normalizeName(name)).filter(Boolean)
+                : [];
+
+            const featuresSet = new Set([
+                ...titleFeats,
+                ...artistFeats,
+                ...contributorFeats
+            ]);
+
+            const filteredFeatures = Array.from(featuresSet).filter(name => {
+                if (!name) return false;
+                if (name === normalizedArtist) return false;
+                return !normalizedArtist.includes(name);
+            });
+
+            const featKey = filteredFeatures.sort().join('|');
+
+            return {
+                baseKey: `${normalizedTitle}::${normalizedArtist}`,
+                featKey
+            };
+        }
+
+        function ensureDeezerEntry(baseKey) {
+            if (!deezerPresenceMap[baseKey]) {
+                deezerPresenceMap[baseKey] = {
+                    am1: new Set(),
+                    am2: new Set()
+                };
+            }
+            return deezerPresenceMap[baseKey];
+        }
+
+        function registerPlaylistTracks(tracks, playlistKey) {
+            let registered = 0;
+            if (!Array.isArray(tracks)) {
+                return { processed: 0, registered };
+            }
+
+            tracks.forEach(track => {
+                const title = track?.title || '';
+                const artistName = track?.artist?.name || '';
+                const contributors = Array.isArray(track?.contributors)
+                    ? track.contributors.map(c => c?.name).filter(Boolean)
+                    : [];
+
+                const signature = buildTrackSignature(title, artistName, contributors);
+                if (!signature.baseKey) return;
+
+                const entry = ensureDeezerEntry(signature.baseKey);
+                const set = entry[playlistKey];
+                const beforeSize = set.size;
+                set.add(signature.featKey);
+                if (set.size > beforeSize) {
+                    registered++;
+                }
+            });
+
+            return { processed: tracks.length, registered };
+        }
+
+        function extractNextIndex(nextUrl) {
+            if (!nextUrl) return null;
+            try {
+                const parsed = new URL(nextUrl);
+                const raw = parsed.searchParams.get('index');
+                if (!raw) return null;
+                const index = Number(raw);
+                return Number.isNaN(index) ? null : index;
+            } catch (err) {
+                return null;
+            }
+        }
+
+        async function fetchPlaylistTracks(playlistId) {
+            const collected = [];
+            const seenIds = new Set();
+            let query = '';
+            let guard = 0;
+
+            while (guard < 50) {
+                guard++;
+                const url = '/deezer/playlist/' + encodeURIComponent(playlistId) + query;
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error('HTTP ' + response.status);
+                }
+                const payload = await response.json();
+                const pageTracks = Array.isArray(payload.data) ? payload.data : [];
+
+                pageTracks.forEach(track => {
+                    const trackId = track?.id;
+                    if (trackId && seenIds.has(trackId)) return;
+                    if (trackId) seenIds.add(trackId);
+                    collected.push(track);
+                });
+
+                if (!payload.next || pageTracks.length === 0) {
+                    break;
+                }
+
+                const nextIndex = extractNextIndex(payload.next);
+                if (nextIndex === null) {
+                    break;
+                }
+
+                const nextQuery = '?index=' + nextIndex;
+                if (nextQuery === query) {
+                    break;
+                }
+                query = nextQuery;
+            }
+
+            return collected;
         }
 
         function applyDeezerPresenceToTable() {
@@ -1344,14 +1609,16 @@
                 const title = titleCell.childNodes[0]?.textContent.trim() || '';
                 const artist = artistCell.childNodes[0]?.textContent.trim() || '';
 
-                const key = normalise(title) + '::' + normalise(artist);
-                const info = deezerPresenceMap[key];
+                const signature = buildTrackSignature(title, artist);
+                const entry = signature.baseKey ? deezerPresenceMap[signature.baseKey] : undefined;
+                const am1Match = entry?.am1?.has(signature.featKey) || false;
+                const am2Match = entry?.am2?.has(signature.featKey) || false;
 
                 row.classList.remove('in-deezer');
                 presenceCell.className = 'presence-cell presence-unknown';
                 presenceCell.textContent = '⏳ Pas encore vérifié';
 
-                if (!info) {
+                if (!entry || (!am1Match && !am2Match)) {
                     presenceCell.classList.replace('presence-unknown', 'presence-absent');
                     presenceCell.textContent = '❌ Absent';
                     return;
@@ -1360,18 +1627,15 @@
                 row.classList.add('in-deezer');
                 inDeezerCount++;
 
-                if (info.am1 && info.am2) {
+                if (am1Match && am2Match) {
                     presenceCell.classList.replace('presence-unknown', 'presence-both');
                     presenceCell.textContent = '✅ AM1 + AM2';
-                } else if (info.am1) {
+                } else if (am1Match) {
                     presenceCell.classList.replace('presence-unknown', 'presence-am1');
                     presenceCell.textContent = '✅ AM1';
-                } else if (info.am2) {
+                } else if (am2Match) {
                     presenceCell.classList.replace('presence-unknown', 'presence-am2');
                     presenceCell.textContent = '✅ AM2';
-                } else {
-                    presenceCell.classList.replace('presence-unknown', 'presence-absent');
-                    presenceCell.textContent = '❌ Absent';
                 }
             });
 
@@ -1381,10 +1645,10 @@
 
         async function loadDeezerPlaylists() {
             const statusEl = document.getElementById('deezerStatus');
-            const p1 = extractPlaylistId(document.getElementById('playlist1Input').value);
-            const p2 = extractPlaylistId(document.getElementById('playlist2Input').value);
+            const playlist1 = extractPlaylistId(document.getElementById('playlist1Input').value);
+            const playlist2 = extractPlaylistId(document.getElementById('playlist2Input').value);
 
-            if (!p1 && !p2) {
+            if (!playlist1 && !playlist2) {
                 alert('Merci de saisir au moins une playlist Deezer valide (URL ou ID).');
                 return;
             }
@@ -1393,23 +1657,42 @@
             deezerPresenceMap = {};
 
             try {
-                if (p1) {
-                    const tracks1 = await fetchPlaylistTracks(p1);
-                    tracks1.forEach(t => {
-                        const key = normalise(t.title) + '::' + normalise(t.artist && t.artist.name);
-                        if (!deezerPresenceMap[key]) deezerPresenceMap[key] = { am1: false, am2: false };
-                        deezerPresenceMap[key].am1 = true;
-                    });
+                const fetchJobs = [];
+                if (playlist1) {
+                    fetchJobs.push(
+                        fetchPlaylistTracks(playlist1).then(tracks => ({
+                            playlistKey: 'am1',
+                            playlistId: playlist1,
+                            tracks
+                        }))
+                    );
+                }
+                if (playlist2) {
+                    fetchJobs.push(
+                        fetchPlaylistTracks(playlist2).then(tracks => ({
+                            playlistKey: 'am2',
+                            playlistId: playlist2,
+                            tracks
+                        }))
+                    );
                 }
 
-                if (p2) {
-                    const tracks2 = await fetchPlaylistTracks(p2);
-                    tracks2.forEach(t => {
-                        const key = normalise(t.title) + '::' + normalise(t.artist && t.artist.name);
-                        if (!deezerPresenceMap[key]) deezerPresenceMap[key] = { am1: false, am2: false };
-                        deezerPresenceMap[key].am2 = true;
-                    });
-                }
+                const results = await Promise.all(fetchJobs);
+                const summaries = {};
+
+                results.forEach(result => {
+                    const summary = registerPlaylistTracks(result.tracks, result.playlistKey);
+                    summaries[result.playlistKey] = {
+                        playlistId: result.playlistId,
+                        fetched: summary.processed,
+                        registered: summary.registered
+                    };
+                });
+
+                console.debug('Deezer playlists récupérées', {
+                    summaries,
+                    entries: Object.keys(deezerPresenceMap).length
+                });
 
                 applyDeezerPresenceToTable();
                 statusEl.textContent = '✅ Analyse terminée.';
